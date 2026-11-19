@@ -6,6 +6,7 @@
   <meta name="theme-color" content="#0284c7" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <link rel="apple-touch-icon" href="./icons/icon-192.png" />
   <title>IdroHome — Irrigazione Residenziale</title>
   <link rel="manifest" href="./manifest.webmanifest" />
   <link rel="stylesheet" href="./style.css" />
@@ -51,12 +52,35 @@
       </div>
     </section>
 
-    <!-- Zone Irrigazione -->
+    <!-- Zone Irrigazione + Gestione Dinamica -->
     <section class="card">
       <div class="section-header">
         <h3>Zone Giardino</h3>
-        <span class="muted small">Attivazione sequenziale (1 alla volta)</span>
+        <span class="muted small">Sequenza dall'alto in basso</span>
       </div>
+
+      <form id="add-zone-form" class="add-zone-form">
+        <input
+          type="text"
+          id="new-zone-name"
+          class="input-text"
+          placeholder="Nuova zona (es. Agrumi in vaso)"
+          maxlength="36"
+          required
+        />
+        <input
+          type="number"
+          id="new-zone-duration"
+          class="duration-input"
+          min="1"
+          max="60"
+          value="15"
+          title="Durata in minuti"
+          required
+        />
+        <button type="submit" class="btn btn-primary btn-sm">+ Aggiungi</button>
+      </form>
+
       <div id="zones-list" class="zones-list"></div>
     </section>
 
