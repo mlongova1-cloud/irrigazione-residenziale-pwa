@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#0284c7" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>IdroHome — Irrigazione Residenziale</title>
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <header class="app-header">
+    <div>
+      <h1>IdroHome</h1>
+      <p class="subtitle">Giardino Casa · Modalità Simulatore</p>
+    </div>
+    <span id="conn-badge" class="badge badge-sim">SIMULATORE</span>
+  </header>
+
+  <main class="container">
+    <!-- Stato Impianto + Stop Emergenza -->
+    <section class="card status-card" aria-live="polite">
+      <div class="status-top">
+        <div>
+          <span class="label">Stato Impianto</span>
+          <h2 id="plant-state-label">A riposo</h2>
+        </div>
+        <div id="active-timer" class="timer-display">00:00</div>
+      </div>
+      <p id="plant-state-detail" class="muted">Nessuna elettrovalvola aperta.</p>
+
+      <div class="action-row">
+        <button id="btn-run-all" class="btn btn-primary">Avvia Ciclo Completo</button>
+        <button id="btn-stop-all" class="btn btn-danger">STOP TUTTO</button>
+      </div>
+    </section>
+
+    <!-- Blocco Pioggia / Sospensione -->
+    <section class="card">
+      <div class="section-header">
+        <h3>Sospensione & Pioggia</h3>
+        <span id="rain-status" class="pill">Asciutto</span>
+      </div>
+      <div class="chip-group">
+        <button class="chip" data-hold="0">Attivo</button>
+        <button class="chip" data-hold="24">Pausa 24h</button>
+        <button class="chip" data-hold="48">Pausa 48h</button>
+        <button id="btn-toggle-rain" class="chip chip-outline">Simula Sensore Pioggia</button>
+      </div>
+    </section>
+
+    <!-- Zone Irrigazione -->
+    <section class="card">
+      <div class="section-header">
+        <h3>Zone Giardino</h3>
+        <span class="muted small">Attivazione sequenziale (1 alla volta)</span>
+      </div>
+      <div id="zones-list" class="zones-list"></div>
+    </section>
+
+    <!-- Programma Automatico -->
+    <section class="card">
+      <div class="section-header">
+        <h3>Programma Automatico</h3>
+        <label class="switch">
+          <input type="checkbox" id="schedule-enabled" checked />
+          <span class="slider"></span>
+        </label>
+      </div>
+      <div class="schedule-box">
+        <div class="field">
+          <label for="schedule-time">Orario di avvio</label>
+          <input type="time" id="schedule-time" value="05:30" />
+        </div>
+        <div class="field">
+          <label>Giorni attivi</label>
+          <div id="days-selector" class="days-grid"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Controlli Simulatore -->
+    <section class="card sim-card">
+      <div class="section-header">
+        <h3>Banco di Test (Simulatore)</h3>
+        <button id="btn-speed" class="chip">Velocità: 1x</button>
+      </div>
+      <p class="muted small">
+        Usa la velocità <strong>10x</strong> per verificare in pochi secondi il passaggio automatico da una zona all'altra e il blocco pioggia.
+      </p>
+      <div id="event-log" class="log-box"></div>
+    </section>
+  </main>
+
+  <script src="./app.js"></script>
+</body>
+</html>
