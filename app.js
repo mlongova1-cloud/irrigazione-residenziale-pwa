@@ -3,7 +3,7 @@ const DAYS = ['Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab', 'Dom'];
 
 const defaultState = {
   rainSensorActive: false,
-  rainHoldUntil: null, // timestamp ms
+  rainHoldUntil: null,
   simSpeed: 1,
   zones: [
     { id: 'z1', name: 'Prato Fronte', durationMinutes: 15 },
@@ -14,7 +14,7 @@ const defaultState = {
   schedule: {
     enabled: true,
     startTime: '05:30',
-    days: [0, 2, 4] // Lun, Mer, Ven
+    days: [0, 2, 4]
   }
 };
 
@@ -29,7 +29,16 @@ let runtime = {
 function loadState() {
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
-    return saved ? { ...defaultState, ...JSON.parse(saved) } : structuredClone(defaultState);
+    if (!saved) return structuredClone(defaultState);
+    const parsed = JSON.parse(saved);
+    return {
+      ...defaultState,
+      ...parsed,
+      zones: Array.isArray(parsed.zones) && parsed.zones.length > 0
+        ? parsed.zones
+        : structuredClone(defaultState.zones),
+      schedule: { ...defaultState.schedule, ...(parsed.schedule || {}) }
+    };
   } catch {
     return structuredClone(defaultState);
   }
@@ -56,7 +65,6 @@ function formatSeconds(sec) {
   return `${m}:${s}`;
 }
 
-// Avvia una o più zone in sequenza (mai in parallelo)
 function startZones(zoneIds, manualOverride = false) {
   if (!manualOverride && isRainBlocked()) {
     addLog('Avvio bloccato: sensore pioggia o pausa attiva.');
@@ -86,7 +94,6 @@ function advanceQueue() {
     return;
   }
 
-  // Watchdog di sicurezza: massimo 60 minuti per zona
   const safeMinutes = Math.min(zone.durationMinutes, 60);
   runtime.activeZoneId = zone.id;
   runtime.remainingSeconds = safeMinutes * 60;
@@ -104,7 +111,61 @@ function stopAll(logEvent = true) {
   render();
 }
 
-// Tick simulatore (ogni 1000 ms reali avanza di simSpeed secondi)
+function addZone(name, durationMinutes) {
+  const cleanName = name.trim();
+  if (!cleanName) return;
+  const safeDuration = Math.max(1, Math.min(60, Number(durationMinutes) || 10));
+  const id = `z_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 5)}`;
+  state.zones.push({ id, name: cleanName, durationMinutes: safeDuration });
+  saveState();
+  addLog(`Aggiunta zona "${cleanName}" (${safeDuration} min).`);
+  render();
+}
+
+function renameZone(zoneId, newName) {
+  const zone = state.zones.find((z) => z.id === zoneId);
+  if (!zone) return;
+  const cleanName = newName.trim();
+  if (!cleanName || cleanName === zone.name) {
+    render();
+    return;
+  }
+  const oldName = zone.name;
+  zone.name = cleanName;
+  saveState();
+  addLog(`Zona rinominata: "${oldName}" → "${cleanName}".`);
+  render();
+}
+
+function moveZone(zoneId, delta) {
+  const idx = state.zones.findIndex((z) => z.id === zoneId);
+  if (idx === -1) return;
+  const targetIdx = idx + delta;
+  if (targetIdx < 0 || targetIdx >= state.zones.length) return;
+
+  const [moved] = state.zones.splice(idx, 1);
+  state.zones.splice(targetIdx, 0, moved);
+  saveState();
+  addLog(`Spostata zona "${moved.name}" in posizione ${targetIdx + 1}.`);
+  render();
+}
+
+function deleteZone(zoneId) {
+  if (runtime.activeZoneId === zoneId) {
+    addLog('Impossibile eliminare una zona attualmente aperta: fermala prima.');
+    render();
+    return;
+  }
+  const zone = state.zones.find((z) => z.id === zoneId);
+  if (!zone) return;
+
+  state.zones = state.zones.filter((z) => z.id !== zoneId);
+  runtime.queue = runtime.queue.filter((id) => id !== zoneId);
+  saveState();
+  addLog(`Eliminata zona "${zone.name}".`);
+  render();
+}
+
 setInterval(() => {
   if (!runtime.activeZoneId) return;
 
@@ -123,6 +184,14 @@ function renderStatusOnly() {
   timerEl.textContent = formatSeconds(runtime.remainingSeconds);
 }
 
+function escapeAttr(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
 function render() {
   const statusCard = document.querySelector('.status-card');
   const stateLabel = document.getElementById('plant-state-label');
@@ -135,7 +204,7 @@ function render() {
   if (runtime.activeZoneId) {
     const activeZone = state.zones.find((z) => z.id === runtime.activeZoneId);
     statusCard.classList.add('running');
-    stateLabel.textContent = `In corso: ${activeZone.name}`;
+    stateLabel.textContent = `In corso: ${activeZone ? activeZone.name : 'Zona'}`;
     stateDetail.textContent = runtime.queue.length
       ? `In coda: ${runtime.queue.length} zona/e successive`
       : 'Ultima zona del ciclo in corso';
@@ -153,7 +222,6 @@ function render() {
     timerEl.textContent = '00:00';
   }
 
-  // Stato pioggia
   if (state.rainSensorActive) {
     rainStatus.textContent = 'Pioggia rilevata';
     rainStatus.className = 'pill rain';
@@ -165,37 +233,83 @@ function render() {
     rainStatus.className = 'pill';
   }
 
-  // Lista zone
   const zonesList = document.getElementById('zones-list');
   zonesList.innerHTML = '';
-  state.zones.forEach((zone) => {
+
+  if (state.zones.length === 0) {
+    zonesList.innerHTML = '<p class="muted small">Nessuna zona configurata. Aggiungine una qui sopra.</p>';
+  }
+
+  state.zones.forEach((zone, index) => {
     const isRunning = runtime.activeZoneId === zone.id;
     const isQueued = runtime.queue.includes(zone.id);
 
     const item = document.createElement('div');
     item.className = `zone-item ${isRunning ? 'active' : ''} ${isQueued ? 'queued' : ''}`;
     item.innerHTML = `
-      <div>
-        <strong>${zone.name}</strong>
+      <div class="zone-left">
+        <input
+          type="text"
+          class="zone-name-input"
+          value="${escapeAttr(zone.name)}"
+          data-rename-zone="${zone.id}"
+          aria-label="Nome zona ${escapeAttr(zone.name)}"
+        />
         <div class="zone-meta">
-          <span class="muted small">Durata (min):</span>
-          <input type="number" min="1" max="60" value="${zone.durationMinutes}" class="duration-input" data-zone="${zone.id}" />
+          <span class="muted small">Min:</span>
+          <input
+            type="number"
+            min="1"
+            max="60"
+            value="${zone.durationMinutes}"
+            class="duration-input"
+            data-zone="${zone.id}"
+          />
           ${isRunning ? '<span class="pill">APERTA</span>' : ''}
           ${isQueued ? '<span class="pill">IN CODA</span>' : ''}
         </div>
       </div>
-      <button class="btn btn-sm ${isRunning ? 'btn-danger' : 'btn-primary'}" data-run-zone="${zone.id}">
-        ${isRunning ? 'Ferma' : 'Avvia'}
-      </button>
+      <div class="zone-actions">
+        <button
+          type="button"
+          class="btn-icon"
+          data-move-up="${zone.id}"
+          title="Sposta su"
+          ${index === 0 ? 'disabled' : ''}
+        >▲</button>
+        <button
+          type="button"
+          class="btn-icon"
+          data-move-down="${zone.id}"
+          title="Sposta giù"
+          ${index === state.zones.length - 1 ? 'disabled' : ''}
+        >▼</button>
+        <button
+          type="button"
+          class="btn btn-sm ${isRunning ? 'btn-danger' : 'btn-primary'}"
+          data-run-zone="${zone.id}"
+        >
+          ${isRunning ? 'Ferma' : 'Avvia'}
+        </button>
+        <button
+          type="button"
+          class="btn-icon btn-del"
+          data-delete-zone="${zone.id}"
+          title="Elimina zona"
+        >✕</button>
+      </div>
     `;
     zonesList.appendChild(item);
   });
 
-  // Giorni programma
+  document.getElementById('schedule-enabled').checked = Boolean(state.schedule.enabled);
+  document.getElementById('schedule-time').value = state.schedule.startTime || '05:30';
+
   const daysSelector = document.getElementById('days-selector');
   daysSelector.innerHTML = '';
   DAYS.forEach((day, idx) => {
     const btn = document.createElement('button');
+    btn.type = 'button';
     btn.className = `day-btn ${state.schedule.days.includes(idx) ? 'active' : ''}`;
     btn.textContent = day;
     btn.onclick = () => {
@@ -210,14 +324,23 @@ function render() {
     daysSelector.appendChild(btn);
   });
 
-  // Velocità simulatore & Log
   document.getElementById('btn-speed').textContent = `Velocità: ${state.simSpeed}x`;
   const logBox = document.getElementById('event-log');
   logBox.innerHTML = runtime.logs.map((l) => `<div>${l}</div>`).join('');
 }
 
 // Event Listeners
+document.getElementById('add-zone-form').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const nameInput = document.getElementById('new-zone-name');
+  const durInput = document.getElementById('new-zone-duration');
+  addZone(nameInput.value, durInput.value);
+  nameInput.value = '';
+  nameInput.focus();
+});
+
 document.getElementById('btn-run-all').onclick = () => {
+  if (state.zones.length === 0) return;
   startZones(state.zones.map((z) => z.id), true);
 };
 
@@ -245,25 +368,51 @@ document.querySelectorAll('[data-hold]').forEach((btn) => {
 });
 
 document.getElementById('zones-list').addEventListener('click', (e) => {
-  const zoneId = e.target.dataset.runZone;
-  if (!zoneId) return;
-  if (runtime.activeZoneId === zoneId) {
-    stopAll(true);
-  } else {
-    startZones([zoneId], true);
+  const runId = e.target.dataset.runZone;
+  if (runId) {
+    if (runtime.activeZoneId === runId) {
+      stopAll(true);
+    } else {
+      startZones([runId], true);
+    }
+    return;
+  }
+
+  const upId = e.target.dataset.moveUp;
+  if (upId) {
+    moveZone(upId, -1);
+    return;
+  }
+
+  const downId = e.target.dataset.moveDown;
+  if (downId) {
+    moveZone(downId, 1);
+    return;
+  }
+
+  const delId = e.target.dataset.deleteZone;
+  if (delId) {
+    deleteZone(delId);
   }
 });
 
 document.getElementById('zones-list').addEventListener('change', (e) => {
-  const zoneId = e.target.dataset.zone;
-  if (!zoneId) return;
-  const val = Math.max(1, Math.min(60, Number(e.target.value) || 1));
-  const zone = state.zones.find((z) => z.id === zoneId);
-  if (zone) {
-    zone.durationMinutes = val;
-    saveState();
-    addLog(`Durata ${zone.name} aggiornata a ${val} min.`);
-    render();
+  const durZoneId = e.target.dataset.zone;
+  if (durZoneId) {
+    const val = Math.max(1, Math.min(60, Number(e.target.value) || 1));
+    const zone = state.zones.find((z) => z.id === durZoneId);
+    if (zone) {
+      zone.durationMinutes = val;
+      saveState();
+      addLog(`Durata ${zone.name} aggiornata a ${val} min.`);
+      render();
+    }
+    return;
+  }
+
+  const renameZoneId = e.target.dataset.renameZone;
+  if (renameZoneId) {
+    renameZone(renameZoneId, e.target.value);
   }
 });
 
@@ -287,12 +436,11 @@ document.getElementById('btn-speed').onclick = () => {
   render();
 };
 
-// Registrazione Service Worker + Avvio
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('./sw.js').catch(() => {});
   });
 }
 
-addLog('Sistema pronto in modalità simulazione.');
+addLog('Sistema pronto con gestione dinamica zone.');
 render();
